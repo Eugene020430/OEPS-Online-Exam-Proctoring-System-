@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Online Exam</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .exam-container {
+            display: flex;
+            width: 100%;
+        }
+        .exam-content {
+            flex: 3;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-right: 20px;
+        }
+        .monitoring-panel {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        #webcam, #processed-video {
+            width: 100%;
+            border-radius: 5px;
+        }
+        #alerts {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #ffeeee;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .verification-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .status-verified {
+            background-color: #e7ffe7;
+            color: green;
+        }
+        .status-unverified {
+            background-color: #ffeeee;
+            color: red;
+        }
+        .controls {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .student-id-input {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+        }
+
+        .heatmap-controls {
+        margin: 10px 0;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 5px;
+        }
+        
+        .attention-stats {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .stat-bar {
+            height: 20px;
+            margin: 5px 0;
+            background-color: #4CAF50;
+            color: white;
+            text-align: right;
+            padding-right: 5px;
+            line-height: 20px;
+            border-radius: 3px;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Online Exam</h1>
+        
+        <!-- Added student ID input for local storage version -->
+        <div class="student-id-input">
+            <label for="studentIdInput">Enter Student ID:</label>
+            <input type="text" id="studentIdInput" placeholder="Your student ID">
+            <button id="loadStudentBtn">Load Student Data</button>
+        </div>
+        
+        <div id="verification-panel" class="verification-status status-unverified">
+            Identity verification required
+        </div>
+        
+        <div class="exam-container">
+            <div class="exam-content">
+                <h2>Exam Questions</h2>
+                <!-- Exam content goes here -->
+                <form id="exam-form">
+                    <div class="question">
+                        <h3>Question 1</h3>
+                        <p>What is the capital of France?</p>
+                        <input type="radio" name="q1" value="paris"> Paris<br>
+                        <input type="radio" name="q1" value="london"> London<br>
+                        <input type="radio" name="q1" value="berlin"> Berlin<br>
+                    </div>
+                    
+                    <div class="question">
+                        <h3>Question 2</h3>
+                        <p>What is 2 + 2?</p>
+                        <input type="radio" name="q2" value="3"> 3<br>
+                        <input type="radio" name="q2" value="4"> 4<br>
+                        <input type="radio" name="q2" value="5"> 5<br>
+                    </div>
+                    
+                    <!-- Add more questions as needed -->
+                    
+                    <button type="submit" id="submit-exam" disabled>Submit Exam</button>
+                </form>
+            </div>
+            
+            <div class="monitoring-panel">
+                <h3>Proctoring Monitor</h3>
+                <div class="video-container">
+                    <video id="webcam" autoplay playsinline></video>
+                    <img id="processed-video" style="display:none;" />
+                </div>
+
+                <div class="heatmap-controls">
+                    <label for="show-heatmap">Show Gaze Heatmap:</label>
+                    <input type="checkbox" id="show-heatmap">
+                    <button id="clear-heatmap">Clear Heatmap</button>
+                </div>
+                
+                <div class="attention-stats">
+                    <h4>Attention Statistics</h4>
+                    <div id="stats-container">
+                        <div>Loading attention data...</div>
+                    </div>
+                </div>
+
+                <div id="alerts">
+                    Waiting for verification...
+                </div>
+                <div class="controls">
+                    <button id="verify-identity">Verify My Identity</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let verificationStatus = false;
+        let detectionInterval = null;
+        let violations = [];
+        let currentStudentId = '';
+        let showHeatmap = false;
+        
+        // Access webcam
+        const video = document.getElementById('webcam');
+        const processedImg = document.getElementById('processed-video');
+        const alertsDiv = document.getElementById('alerts');
+        const verificationPanel = document.getElementById('verification-panel');
+        const submitButton = document.getElementById('submit-exam');
+        const studentIdInput = document.getElementById('studentIdInput');
+        const loadStudentBtn = document.getElementById('loadStudentBtn');
+        
+        // Check if the student is already verified from session
+        async function checkVerification() {
+            try {
+                const response = await fetch('/check_verification');
+                const data = await response.json();
+                
+                if (data.verified && data.studentId) {
+                    verificationStatus = true;
+                    currentStudentId = data.studentId;
+                    verificationPanel.className = "verification-status status-verified";
+                    verificationPanel.textContent = "Identity Verified";
+                    submitButton.disabled = false;
+                    
+                    // Hide student ID input if already verified
+                    document.querySelector('.student-id-input').style.display = 'none';
+                    
+                    // Start webcam and monitoring
+                    await startWebcam();
+                    startObjectDetection();
+                    
+                    // Update UI
+                    alertsDiv.innerHTML = `Welcome, Student ID: ${currentStudentId}`;
+                }
+            } catch (error) {
+                console.error('Error checking verification:', error);
+            }
+        }
+        
+        // Call this when the page loads
+        checkVerification();
+
+        // Load student data
+        // Add this to the student ID load function
+        loadStudentBtn.addEventListener('click', async function() {
+            currentStudentId = studentIdInput.value.trim();
+            if (!currentStudentId) {
+                alertsDiv.innerHTML = "Please enter a valid Student ID";
+                return;
+            }
+
+            // Check if student is verified
+            try {
+                const response = await fetch(`/check_verification?studentId=${currentStudentId}`);
+                const data = await response.json();
+                
+                if (!data.verified) {
+                    alertsDiv.innerHTML = "You need to verify your identity before accessing the exam.";
+                    setTimeout(() => {
+                        window.location.href = '/signin';
+                    }, 2000);
+                    return;
+                }
+                
+                // If verified, proceed with exam
+                verificationStatus = true;
+                verificationPanel.className = "verification-status status-verified";
+                verificationPanel.textContent = "Identity Verified";
+                submitButton.disabled = false;
+                
+                // Start webcam and monitoring
+                await startWebcam();
+                startObjectDetection();
+            } catch (error) {
+                alertsDiv.innerHTML = `Error: ${error.message}`;
+            }
+        
+        
+            // Check enrollment status first
+            try {
+                const response = await fetch(`/check_enrollment?studentId=${currentStudentId}`);
+                const data = await response.json();
+            
+                if (!data.enrolled) {
+                    alertsDiv.innerHTML = `Error: ${data.message || "Student not enrolled"}. Please complete enrollment first.`;
+                    document.getElementById('verify-identity').textContent = "Enroll";
+                    document.getElementById('verify-identity').onclick = function() {
+                    window.location.href = `/enroll?studentId=${currentStudentId}`;
+                    };
+                    return;
+                }
+            
+                alertsDiv.innerHTML = `Student ID ${currentStudentId} loaded. Please verify your identity.`;
+                document.getElementById('verify-identity').textContent = "Verify My Identity";
+                startWebcam();
+                } catch (error) {
+                    alertsDiv.innerHTML = `Error: ${error.message}`;
+                }
+            });
+            
+        // Start webcam
+        async function startWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+                return true;
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                alertsDiv.innerHTML = "Error: Cannot access webcam. Please check permissions.";
+                return false;
+            }
+        }
+        
+        // Capture current frame from webcam
+        function captureFrame() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            return canvas.toDataURL('image/jpeg');
+        }
+        
+        // Verify student identity
+        document.getElementById('verify-identity').addEventListener('click', async function() {
+            if (!video.srcObject) {
+                await startWebcam();
+                return;
+            }
+            
+            if (!currentStudentId) {
+                alertsDiv.innerHTML = "Please enter and load your Student ID first";
+                return;
+            }
+            
+            const imageData = captureFrame();
+            
+            // Send to server for verification
+            try {
+                const response = await fetch('/verify_identity', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        image: imageData,
+                        studentId: currentStudentId 
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    verificationStatus = true;
+                    verificationPanel.className = "verification-status status-verified";
+                    verificationPanel.textContent = `Identity Verified (${(data.confidence * 100).toFixed(2)}% match)`;
+                    submitButton.disabled = false;
+                    
+                    // Start object detection after verification
+                    startObjectDetection();
+                } else {
+                    verificationPanel.className = "verification-status status-unverified";
+                    verificationPanel.textContent = data.message;
+                    alertsDiv.innerHTML = `<p>Verification failed: ${data.message}</p>`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alertsDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        });
+        
+        // Start object detection monitoring
+        function startObjectDetection() {
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+            }
+            
+            detectionInterval = setInterval(async () => {
+                const imageData = captureFrame();
+                
+                // Send to server for object detection
+                try {
+                    const response = await fetch('/detect_objects', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            image: imageData,
+                            studentId: currentStudentId,
+                            showHeatmap: showHeatmap
+                        }),
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Display processed image
+                        processedImg.src = data.processed_image;
+                        processedImg.style.display = 'block';
+                        video.style.display = 'none';
+                        
+                        // Handle suspicious activities
+                        if (data.suspicious_activities && data.suspicious_activities.length > 0) {
+                            let alertText = "<h4>Suspicious Activities Detected:</h4><ul>";
+                            
+                            data.suspicious_activities.forEach(activity => {
+                                let activityText = "";
+                                // Format the activity text based on type
+                                if (activity.object.startsWith('prolonged_looking_')) {
+                                    const direction = activity.object.replace('prolonged_looking_', '');
+                                    activityText = `ALERT: Prolonged gaze ${direction} for ${activity.duration}s (${(activity.confidence * 100).toFixed(2)}%)`;
+                                } else if (activity.object.startsWith('looking_')) {
+                                    const direction = activity.object.replace('looking_', '');
+                                    activityText = `Gaze direction: ${direction} (${(activity.confidence * 100).toFixed(2)}%)`;
+                                } else {
+                                    activityText = `${activity.object} (${(activity.confidence * 100).toFixed(2)}%)`;
+                                }
+                                
+                                alertText += `<li>${activityText} - ${activity.timestamp}</li>`;
+                                
+                                // Add to violations if not already present
+                                if (!violations.find(v => v.timestamp === activity.timestamp)) {
+                                    violations.push(activity);
+                                }
+                            });
+                            
+                            alertText += "</ul>";
+                            alertsDiv.innerHTML = alertText;
+                        } else {
+                            alertsDiv.innerHTML = "<p>No suspicious activities detected</p>";
+                        }
+                    } else {
+                        console.error("Object detection failed:", data.message);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            }, 2000); // Check every 2 seconds
+        }
+
+        //Function to update attention statistics visualization
+        function updateAttentionStats(stats) {
+            const statsContainer = document.getElementById('stats-container');
+            let html = '';
+
+            for (const [direction, percentage] of Object.entries(stats)) {
+                html += `
+                <div>
+                    <span>${direction}:</span>
+                    <div class="stat-bar" style="width: ${percentage}%">${percentage}%</div>
+                </div>
+                `;
+            }
+            statsContainer.innerHTML = html;
+        }
+        
+        // Handle exam submission
+        document.getElementById('exam-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            if (!verificationStatus) {
+                alert("Please verify your identity before submitting the exam.");
+                return;
+            }
+            
+            // Here you would typically send the form data to the server
+            alert("Exam submitted successfully!");
+        });
+
+        document.getElementById('show-heatmap').addEventListener('change', function() {
+        showHeatmap = this.checked;
+    });
+    
+    document.getElementById('clear-heatmap').addEventListener('click', async function() {
+        if (!currentStudentId) {
+            alertsDiv.innerHTML = "Please enter and load your Student ID first";
+            return;
+        }
+        
+        try {
+            const response = await fetch('/clear_heatmap', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    studentId: currentStudentId 
+                }),
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alertsDiv.innerHTML = "<p>Heatmap cleared successfully</p>";
+            } else {
+                alertsDiv.innerHTML = `<p>Error: ${data.message}</p>`;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alertsDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+        }
+    });
+    </script>
+</body>
+</html>

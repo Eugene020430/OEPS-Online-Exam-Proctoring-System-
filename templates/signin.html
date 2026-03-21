@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - Online Exam Proctoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 70px;
+            background-color: #f7f7f7;
+        }
+        .container-2 {
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-top: 40px;
+        }
+        .container-item-1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        #videoElement {
+            width: 100%;
+            height: 300px;
+            background-color: #f0f0f0;
+        }
+        .capture-btn {
+            width: 100%;
+            margin-top: 10px;
+        }
+        #preview {
+            width: 100%;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            height: 200px;
+            object-fit: cover;
+        }
+        #successAlert, #errorAlert {
+            display: none;
+            margin-top: 20px;
+        }
+        .camera-error {
+            color: red;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .col-txt {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .signin-section {
+            margin-top: 30px;
+        }
+        .verification-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .status-verified {
+            background-color: #e7ffe7;
+            color: green;
+        }
+        .status-unverified {
+            background-color: #ffeeee;
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="/">Exam Proctor</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/enroll">Enroll</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/signin">Sign In</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/exam">Start Exam</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-2">
+        <div class="container-item-1">
+            <h1 class="mb-4">Student Sign In</h1>
+            <p class="lead">Please verify your identity before proceeding to the exam.</p>  
+        </div>
+       
+        <div class="container-item-2">
+            <!-- Student Login Form -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <h3>Student Login</h3>
+                    <form id="studentLoginForm">
+                        <div class="mb-3">
+                            <label for="studentId" class="form-label">Student ID</label>
+                            <input type="text" class="form-control" id="studentId" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Verify Credentials</button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="verification-panel" class="verification-status status-unverified">
+                Please enter your credentials first
+            </div>
+
+            <div class="signin-section" id="faceVerificationSection" style="display: none;">
+                <!-- Face Verification Section -->
+                <h3>Face Verification</h3>
+                <div id="loadingMessage" class="mb-3">⌛ Loading camera...</div>
+                <div id="cameraError" class="camera-error" style="display:none"></div>
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="col-txt"><p>💡Look into the Camera</p></div>
+                        <div class="video-container">
+                            <video id="videoElement" autoplay playsinline></video>
+                            <canvas id="canvas" style="display: none;"></canvas>
+                        </div>
+                        <button id="captureBtn" class="btn btn-primary capture-btn">Capture Photo</button>
+                    </div>
+                    <div class="col-md-4">
+                        <h4>Preview</h4>
+                        <img id="preview" src="">
+                        <div class="d-grid gap-2 mt-3">
+                            <button id="verifyFaceBtn" class="btn btn-success" disabled>Verify Identity</button>
+                            <button id="retakeBtn" class="btn btn-secondary" style="display:none">Retake Photo</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-success" id="successAlert" role="alert">
+            Verification successful! You can now <a href="/exam" class="alert-link">start the exam</a>.
+        </div>
+    
+        <div class="alert alert-danger" id="errorAlert" role="alert">
+            Error: <span id="errorMessage"></span>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let stream = null;
+        let videoElement = document.getElementById('videoElement');
+        let canvas = document.getElementById('canvas');
+        let captureBtn = document.getElementById('captureBtn');
+        let preview = document.getElementById('preview');
+        let verifyFaceBtn = document.getElementById('verifyFaceBtn');
+        let retakeBtn = document.getElementById('retakeBtn');
+        let faceVerificationSection = document.getElementById('faceVerificationSection');
+        let verificationPanel = document.getElementById('verification-panel');
+        let successAlert = document.getElementById('successAlert');
+        let errorAlert = document.getElementById('errorAlert');
+        let errorMessage = document.getElementById('errorMessage');
+        let loadingMessage = document.getElementById('loadingMessage');
+        let cameraError = document.getElementById('cameraError');
+        let capturedImage = null;
+        let currentStudentId = '';
+        console.log("signin.html reached");
+
+        // Initialize camera when face verification section is shown
+        function initCamera() {
+            loadingMessage.style.display = 'block';
+            cameraError.style.display = 'none';
+            
+            // Request access to webcam
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(streamObj) {
+                    stream = streamObj;
+                    videoElement.srcObject = stream;
+                    loadingMessage.style.display = 'none';
+                })
+                .catch(function(error) {
+                    loadingMessage.style.display = 'none';
+                    cameraError.style.display = 'block';
+                    cameraError.textContent = 'Error accessing camera: ' + error.message;
+                });
+        }
+
+        // Handle login form submission
+        document.getElementById('studentLoginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const studentId = document.getElementById('studentId').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            if (!studentId || !password) {
+                errorMessage.textContent = 'Please enter both student ID and password';
+                errorAlert.style.display = 'block';
+                return;
+            }
+            
+            currentStudentId = studentId;
+            
+            try {
+                // First, check if the student is enrolled
+                const enrollmentResponse = await fetch(`/check_enrollment?studentId=${studentId}`);
+                const enrollmentData = await enrollmentResponse.json();
+                
+                if (!enrollmentData.enrolled) {
+                    errorMessage.textContent = `${enrollmentData.message || "Student not enrolled"}. Please complete enrollment first.`;
+                    errorAlert.style.display = 'block';
+                    return;
+                }
+                
+                // Then verify the password
+                const passwordResponse = await fetch('/verify_password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        studentId: studentId,
+                        password: password
+                    })
+                });
+                
+                const passwordData = await passwordResponse.json();
+                
+                if (!passwordData.success) {
+                    errorMessage.textContent = passwordData.message || 'Invalid credentials';
+                    errorAlert.style.display = 'block';
+                    return;
+                }
+                
+                // Show face verification section if credentials are correct
+                verificationPanel.className = "verification-status status-verified";
+                verificationPanel.textContent = "Credentials verified. Please proceed with face verification.";
+                faceVerificationSection.style.display = 'block';
+                errorAlert.style.display = 'none';
+                
+                // Initialize camera
+                initCamera();
+                
+            } catch (error) {
+                errorMessage.textContent = error.message || 'An error occurred during verification';
+                errorAlert.style.display = 'block';
+            }
+        });
+
+        // Capture photo button
+        captureBtn.addEventListener('click', function() {
+            console.log("Photo captured");
+            const context = canvas.getContext('2d');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to base64
+            capturedImage = canvas.toDataURL('image/jpeg');
+            preview.src = capturedImage;
+            
+            // Show verify and retake buttons
+            verifyFaceBtn.disabled = false;
+            retakeBtn.style.display = 'block';
+        });
+
+        // Retake photo button
+        retakeBtn.addEventListener('click', function() {
+            console.log("Retake of photo initiated")
+            capturedImage = null;
+            preview.src = '';
+            verifyFaceBtn.disabled = true;
+            retakeBtn.style.display = 'none';
+        });
+
+        // Verify face button
+        verifyFaceBtn.addEventListener('click', async function() {
+            console.log("[JS CLIENT verifyFaceBtn] Clicked."); // Add this log!
+            if (!capturedImage) {
+                console.error("[JS CLIENT verifyFaceBtn] No image captured.");
+                errorMessage.textContent = 'Please capture a photo first';
+                errorAlert.style.display = 'block';
+                return;
+            }
+            
+            // Hide previous alerts
+            console.log("[JS CLIENT verifyFaceBtn] Hiding previous alerts.");
+            successAlert.style.display = 'none';
+            errorAlert.style.display = 'none';
+
+            try {
+                console.log("[JS CLIENT verifyFaceBtn] Attempting to fetch /verify_identity with studentId:", currentStudentId);
+                const response = await fetch('/verify_identity', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        studentId: currentStudentId, 
+                        image: capturedImage
+                    })
+                });
+                
+                console.log("[JS CLIENT verifyFaceBtn] Raw response from /verify_identity:", response);
+                const data = await response.json();
+                console.log("[JS CLIENT verifyFaceBtn] Parsed JSON data from /verify_identity:", JSON.stringify(data, null, 2));
+
+                if (data.success) { 
+                    console.log("[JS CLIENT verifyFaceBtn] data.success is TRUE. Now checking data.verified.");
+                    if (data.verified) { // <<<<<<< THE CRITICAL MISSING CHECK WAS HERE
+                        console.log("[JS CLIENT verifyFaceBtn] data.verified is TRUE. Identity VERIFIED.");
+                        await fetch('/set_verified_session', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                studentId: currentStudentId,
+                                verified: true // Correct, as data.verified was true
+                            })
+                        });
+                        console.log("[JS CLIENT verifyFaceBtn] /set_verified_session call completed.");
+                        successAlert.style.display = 'block';
+                        errorAlert.style.display = 'none';
+                        if (stream) {
+                            stream.getTracks().forEach(track => track.stop());
+                        }
+                    } else {
+                        console.warn("[JS CLIENT verifyFaceBtn] data.verified is FALSE. Identity NOT VERIFIED. Message:", data.message);
+                        errorMessage.textContent = data.message || 'Face verification failed';
+                        errorAlert.style.display = 'block';
+                        successAlert.style.display = 'none';
+                    }
+                } else {
+                    console.error("[JS CLIENT verifyFaceBtn] data.success is FALSE. API call failed. Message:", data.message);
+                    errorMessage.textContent = data.message || 'An error occurred during API call';
+                    errorAlert.style.display = 'block';
+                    successAlert.style.display = 'none';
+                }
+            } catch (error) {
+                console.error("[JS CLIENT verifyFaceBtn] CATCH block. Error:", error);
+                errorMessage.textContent = error.message || 'An error occurred during face verification';
+                errorAlert.style.display = 'block';
+                successAlert.style.display = 'none';
+            }
+        });
+
+        // Clean up when leaving the page
+        window.addEventListener('beforeunload', function() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>

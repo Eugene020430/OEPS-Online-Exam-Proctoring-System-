@@ -1,0 +1,224 @@
+<!-- calibration.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Eye Tracking Calibration</title>
+    <style>
+        /* Basic styling for targets, instructions */
+        body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; }
+        #calibration-target { width: 20px; height: 20px; background-color: red; border-radius: 50%; position: absolute; transition: all 0.2s ease-in-out; } /* Added transition */
+        #instructions { margin-bottom: 20px; font-size: 1.2em; text-align: center; }
+        #webcam-container { border: 1px solid black; margin-bottom: 20px; width: 320px; height: 240px; } /* Fixed size */
+        #webcam { display: block; width: 100%; height: 100%;}
+        #messages { margin-top: 15px; min-height: 20px; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: none; margin-left: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <h1 id="instructions">Loading...</h1>
+    <div id="webcam-container">
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+    <div id="calibration-target"></div>
+    <p>Student ID: <span id="studentIdDisplay">Loading...</span></p>
+    <button id="finish-calibration" style="display:none;">Finish and Save Calibration</button>
+    <div id="messages">
+        <!-- For messages and spinner -->
+    </div>
+
+    <script>
+        const webcam = document.getElementById('webcam');
+        const target = document.getElementById('calibration-target');
+        const instructions = document.getElementById('instructions');
+        const finishButton = document.getElementById('finish-calibration');
+        const studentIdDisplay = document.getElementById('studentIdDisplay');
+        const messagesDiv = document.getElementById('messages');
+        let studentId = '';
+
+        const calibrationPoints = []; 
+        const targetPositions = [
+            { top: '10%', left: '10%', name: 'Top-Left' },
+            { top: '10%', left: '50%', name: 'Top-Center' },
+            { top: '10%', left: '90%', name: 'Top-Right' },
+            { top: '50%', left: '10%', name: 'Mid-Left' },
+            { top: '50%', left: '50%', name: 'Center' },
+            { top: '50%', left: '90%', name: 'Mid-Right' },
+            { top: '90%', left: '10%', name: 'Bottom-Left' },
+            { top: '90%', left: '50%', name: 'Bottom-Center' },
+            { top: '90%', left: '90%', name: 'Bottom-Right' }
+        ];
+        let currentTargetIndex = 0;
+        let isProcessingKeyPress = false; // To prevent multiple rapid presses
+
+        async function startWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: {width: 320, height: 240} });
+                webcam.srcObject = stream;
+                // Ensure video is playing before proceeding
+                await new Promise(resolve => webcam.onloadedmetadata = resolve);
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                instructions.textContent = "Error: Cannot access webcam. Please check permissions.";
+                messagesDiv.innerHTML = `<span style="color:red;">Webcam access denied or error.</span>`;
+            }
+        }
+
+        function placeTarget(index) {
+            if (index >= targetPositions.length) {
+                instructions.textContent = "Calibration points gathered! Click 'Finish and Save Calibration'.";
+                target.style.display = 'none';
+                finishButton.style.display = 'block';
+                document.removeEventListener('keydown', handleKeyPress);
+                return;
+            }
+            const pos = targetPositions[index];
+            target.style.top = pos.top;
+            target.style.left = pos.left;
+            instructions.innerHTML = `Look at the red dot (${pos.name}) and press <b>Space</b>. <br> Point ${index + 1} of ${targetPositions.length}`;
+        }
+
+        function captureFrame() {
+            if (!webcam.srcObject || webcam.readyState < webcam.HAVE_ENOUGH_DATA) {
+                console.warn("Webcam not ready for capture.");
+                return null;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = webcam.videoWidth;
+            canvas.height = webcam.videoHeight;
+            canvas.getContext('2d').drawImage(webcam, 0, 0);
+            return canvas.toDataURL('image/jpeg');
+        }
+
+        async function handleKeyPress(event) {
+            if (event.code === 'Space' && currentTargetIndex < targetPositions.length && !isProcessingKeyPress) {
+                event.preventDefault();
+                isProcessingKeyPress = true; // Lock
+
+                const currentTargetInfo = targetPositions[currentTargetIndex];
+                messagesDiv.innerHTML = `Processing for ${currentTargetInfo.name}... <div class="spinner" style="display:inline-block;"></div>`;
+                
+                const imageData = captureFrame();
+                if (!imageData) {
+                    messagesDiv.innerHTML = `<span style="color:red;">Error capturing frame. Try again.</span>`;
+                    isProcessingKeyPress = false; // Unlock
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/get_ratios_for_calibration_point', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: imageData, studentId: studentId }) 
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && data.h_ratio !== undefined && data.v_ratio !== undefined) {
+                        calibrationPoints.push({
+                            targetName: currentTargetInfo.name,
+                            targetScreenPos: [parseFloat(target.style.top) / 100, parseFloat(target.style.left) / 100], // [y_norm, x_norm]
+                            eyeData: { 
+                                h_ratio: data.h_ratio, 
+                                v_ratio: data.v_ratio 
+                            }
+                        });
+                        console.log("Captured point:", calibrationPoints[calibrationPoints.length - 1]);
+                        messagesDiv.textContent = `Point for ${currentTargetInfo.name} captured (H: ${data.h_ratio.toFixed(2)}, V: ${data.v_ratio.toFixed(2)}).`;
+                        currentTargetIndex++;
+                        placeTarget(currentTargetIndex);
+                    } else {
+                        console.warn("Backend did not return successful ratios:", data.message);
+                        messagesDiv.innerHTML = `<span style="color:orange;">Could not get eye ratios for ${currentTargetInfo.name}: ${data.message || 'No pupils?'} Try again.</span>`;
+                        // Don't advance to next target on failure, let user try again for the same point
+                    }
+                } catch (error) {
+                    console.error("Error fetching eye ratios:", error);
+                    messagesDiv.innerHTML = `<span style="color:red;">Error communicating with server for ${currentTargetInfo.name}. Try again.</span>`;
+                } finally {
+                    isProcessingKeyPress = false; // Unlock
+                }
+            }
+        }
+
+        finishButton.addEventListener('click', async () => {
+            if (calibrationPoints.length < targetPositions.length) {
+                alert("Please complete all calibration points.");
+                return;
+            }
+            messagesDiv.innerHTML = 'Saving calibration... <div class="spinner" style="display: inline-block;"></div>';
+
+            const gaze_mapping = { horizontal: [], vertical: [] };
+            calibrationPoints.forEach(p => {
+                gaze_mapping.horizontal.push([p.eyeData.h_ratio, p.targetScreenPos[1]]); // [eye_h_ratio, screen_x_norm]
+                gaze_mapping.vertical.push([p.eyeData.v_ratio, p.targetScreenPos[0]]);   // [eye_v_ratio, screen_y_norm]
+            });
+
+            // Potentially, you could also send the `calibration.py` binarization thresholds
+            // if they were determined and sent back from `/api/get_ratios_for_calibration_point`
+            // For now, we focus on gaze_mapping.
+            const calibrationPayload = {
+                gaze_mapping: gaze_mapping,
+                points_collected_info: calibrationPoints.map(p => ({name: p.targetName, hr: p.eyeData.h_ratio, vr: p.eyeData.v_ratio, tx: p.targetScreenPos[1], ty: p.targetScreenPos[0]})), // For easier debugging in DB
+                calibrated_at: new Date().toISOString()
+            };
+
+            console.log("Payload for /save_calibration:", JSON.stringify(calibrationPayload));
+
+            try {
+                // IMPORTANT: The '/save_calibration' route in app3.py expects studentId from session.
+                // If your calibration page is opened in a way that session['student_id'] is not set,
+                // you need to modify '/save_calibration' to accept studentId from the payload,
+                // or ensure the session is set before navigating to calibration.html.
+                // For now, assuming session has student_id. If not, it will fail.
+                const response = await fetch('/save_calibration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // The studentId for saving is usually taken from the session in your current /save_calibration
+                    // So, we only send the calibration payload itself.
+                    body: JSON.stringify({ 
+                        studentId: studentId,
+                        calibration: calibrationPayload }) 
+                });
+                const result = await response.json();
+                if (result.success) {
+                    messagesDiv.textContent = "Calibration saved successfully! You will be redirected shortly.";
+                    alert("Calibration saved successfully!");
+                    setTimeout(() => {
+                         window.location.href = `/exam`; // Redirect to exam page
+                    }, 2000);
+                } else {
+                    messagesDiv.innerHTML = `<span style="color:red;">Error saving calibration: ${result.message}</span>`;
+                    alert(`Error saving calibration: ${result.message}`);
+                }
+            } catch (error) {
+                console.error("Error saving calibration:", error);
+                messagesDiv.innerHTML = `<span style="color:red;">Error saving calibration: ${error.toString()}</span>`;
+                alert(`Error saving calibration: ${error.toString()}`);
+            }
+        });
+
+        window.onload = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            studentId = urlParams.get('studentId'); // StudentId for display and potentially for /api/get_ratios_for_calibration_point
+            
+            if (studentId) {
+                studentIdDisplay.textContent = studentId;
+            } else {
+                studentIdDisplay.textContent = "Not specified!";
+                instructions.textContent = "Student ID not found in URL. Calibration cannot proceed.";
+                messagesDiv.innerHTML = `<span style="color:red;">Error: Student ID missing from URL.</span>`;
+                return;
+            }
+
+            await startWebcam();
+            if (webcam.srcObject) {
+                placeTarget(currentTargetIndex);
+                document.addEventListener('keydown', handleKeyPress);
+            } else {
+                // Webcam failed to start, message already shown by startWebcam()
+            }
+        };
+    </script>
+</body>
+</html>

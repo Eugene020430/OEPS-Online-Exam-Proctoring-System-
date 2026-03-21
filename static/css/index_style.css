@@ -1,0 +1,84 @@
+body {
+    padding-top: 60px;
+}
+
+.container-2 {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 20px; /* Optional: Add some padding inside the border */
+    box-sizing: border-box;
+    flex-direction: column;
+    border: 5px solid firebrick;
+    justify-content: center;
+}
+.jumbotron {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 20rem;
+    padding: 2rem;
+    background-color: #f8f9fa;
+    border-radius: 0.3rem;
+    margin-bottom: 2rem;
+    margin-left: 0;
+    border: 2px solid red;
+}
+
+.jb-div-parent-1 {
+    border: 2px solid green;
+    display: flex;
+    flex-direction: column;
+}
+
+.jb-div {
+    text-align: center;
+}
+
+.div-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+display-4
+
+lead
+
+.btn-primary {
+    justify-content: center;
+    text-align: center;
+}
+
+.main-flex {
+    border: 2px solid red;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10rem;
+}
+
+.student {
+    border: 3px solid black;
+    display: flex;
+    flex-direction: column;
+    width: 20rem;
+    height: 100%;
+}
+
+.proctor {
+    display: flex;
+    flex-direction: column;
+    border: 3px solid black; 
+    width: 20rem;
+    height: 100%;
+}
+
+.head {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
